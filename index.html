@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Закрытие смены</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg: var(--tg-theme-bg-color, #18181b);
+      --sec-bg: var(--tg-theme-secondary-bg-color, #27272a);
+      --text: var(--tg-theme-text-color, #f4f4f5);
+      --hint: var(--tg-theme-hint-color, #a1a1aa);
+      --btn: var(--tg-theme-button-color, #2563eb);
+      --btn-text: var(--tg-theme-button-text-color, #ffffff);
+      --border: rgba(255, 255, 255, 0.1);
+    }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body {
+      margin: 0; padding: 16px 16px 32px;
+      background: var(--bg); color: var(--text);
+    }
+    .header { margin-bottom: 16px; }
+    .title { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
+    .subtitle { font-size: 13px; color: var(--hint); margin: 0; }
+    .card {
+      background: var(--sec-bg); border-radius: 14px; padding: 14px;
+      margin-bottom: 14px; border: 1px solid var(--border);
+    }
+    .label { font-size: 13px; font-weight: 600; color: var(--hint); margin-bottom: 8px; display: block; }
+    .quick-dates { display: flex; gap: 8px; margin-bottom: 10px; }
+    .chip {
+      flex: 1; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); font-size: 13px; font-weight: 600;
+      cursor: pointer; text-align: center;
+    }
+    .chip.active { background: var(--btn); color: var(--btn-text); border-color: var(--btn); }
+    input[type="date"], textarea {
+      width: 100%; padding: 10px 12px; border-radius: 10px;
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+      font-size: 15px; outline: none;
+    }
+    textarea { resize: vertical; min-height: 68px; }
+    .upload-btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 12px; border-radius: 10px;
+      border: 1.5px dashed var(--hint); background: transparent; color: var(--text);
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 10px; }
+    .thumb-wrap { position: relative; aspect-ratio: 1; border-radius: 8px; overflow: hidden; }
+    .thumb-wrap img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb-del {
+      position: absolute; top: 3px; right: 3px; width: 20px; height: 20px;
+      border-radius: 50%; border: none; background: rgba(0,0,0,0.75); color: #fff;
+      font-size: 12px; cursor: pointer; line-height: 20px; padding: 0;
+    }
+    .submit-btn {
+      width: 100%; padding: 14px; border-radius: 12px; border: none;
+      background: var(--btn); color: var(--btn-text);
+      font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 6px;
+    }
+    .submit-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .status-box {
+      display: none; margin-top: 14px; padding: 14px; border-radius: 12px;
+      background: var(--sec-bg); border: 1px solid var(--border);
+      text-align: center; font-size: 14px; line-height: 1.45;
+    }
+    .spinner {
+      width: 24px; height: 24px; border: 3px solid var(--border);
+      border-top-color: var(--btn); border-radius: 50%;
+      animation: spin 0.8s linear infinite; margin: 0 auto 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .shift-choice-btn {
+      display: block; width: 100%; padding: 11px; margin-top: 8px;
+      border-radius: 10px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 class="title">📊 Закрытие смены</h1>
+    <p class="subtitle" id="userLabel">Загрузка профиля...</p>
+  </div>
+
+  <div class="card">
+    <span class="label">1. Дата закрываемой смены</span>
+    <div class="quick-dates">
+      <button type="button" class="chip" id="btnYesterday"></button>
+      <button type="button" class="chip" id="btnToday"></button>
+    </div>
+    <input type="date" id="dateInput" />
+  </div>
+
+  <div class="card">
+    <span class="label">2. Фото X-отчётов (до 10 шт.)</span>
+    <input type="file" id="photoInput" accept="image/*" multiple style="display:none" />
+    <button type="button" class="upload-btn" onclick="document.getElementById('photoInput').click()">
+      📸 Прикрепить фото X-отчётов
+    </button>
+    <div class="thumbs" id="thumbsGrid"></div>
+  </div>
+
+  <div class="card">
+    <span class="label">3. Комментарий к смене (необязательно)</span>
+    <textarea id="commentInput" placeholder="Например: замечания по кассе или передача смены..."></textarea>
+  </div>
+
+  <button type="button" class="submit-btn" id="submitBtn" onclick="submitShiftReport()">
+    ✅ Сформировать и отправить в чат
+  </button>
+
+  <div class="status-box" id="statusBox"></div>
+
+  <script>
+    // ВСТАВЬТЕ СЮДА ССЫЛКУ ВЕБ-ПРИЛОЖЕНИЯ ИЗ ЯЧЕЙКИ B36:
+    const GAS_WEBAPP_URL = "ВСТАВЬТЕ_URL_ИЗ_B36";
+
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand();
+
+    const user = tg.initDataUnsafe && tg.initDataUnsafe.user;
+    document.getElementById("userLabel").textContent = user
+      ? `Закрывает: ${user.first_name}${user.username ? " (@" + user.username + ")" : ""}`
+      : "Закрытие смены в рабочий чат";
+
+    // Умная дата: с 00:00 до 06:59 по умолчанию выбирается вчерашняя смена
+    function toIso(d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    }
+    function toRu(iso) {
+      const p = iso.split("-");
+      return `${p[2]}/${p[1]}`;
+    }
+
+    const now = new Date();
+    const todayIso = toIso(now);
+    const yestDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const yestIso = toIso(yestDate);
+    const defaultIso = now.getHours() < 7 ? yestIso : todayIso;
+
+    const btnYesterday = document.getElementById("btnYesterday");
+    const btnToday = document.getElementById("btnToday");
+    const dateInput = document.getElementById("dateInput");
+
+    btnYesterday.textContent = `Вчера (${toRu(yestIso)})`;
+    btnToday.textContent = `Сегодня (${toRu(todayIso)})`;
+
+    function setSelectedDate(iso) {
+      dateInput.value = iso;
+      btnYesterday.classList.toggle("active", iso === yestIso);
+      btnToday.classList.toggle("active", iso === todayIso);
+    }
+
+    btnYesterday.onclick = () => setSelectedDate(yestIso);
+    btnToday.onclick = () => setSelectedDate(todayIso);
+    dateInput.onchange = () => setSelectedDate(dateInput.value);
+    setSelectedDate(defaultIso);
+
+    // Сжатие и предпросмотр фотографий X-отчётов
+    let attachedPhotos = []; // [{ previewUrl, base64 }]
+
+    document.getElementById("photoInput").addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []);
+      for (const file of files) {
+        if (attachedPhotos.length >= 10) break;
+        const compressed = await compressImage(file, 1600, 0.82);
+        attachedPhotos.push(compressed);
+      }
+      e.target.value = "";
+      renderThumbs();
+    });
+
+    function compressImage(file, maxSide, quality) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          const img = new Image();
+          img.onload = () => {
+            let w = img.width, h = img.height;
+            if (w > maxSide || h > maxSide) {
+              if (w > h) { h = Math.round(h * maxSide / w); w = maxSide; }
+              else { w = Math.round(w * maxSide / h); h = maxSide; }
+            }
+            const canvas = document.createElement("canvas");
+            canvas.width = w; canvas.height = h;
+            canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+            const dataUrl = canvas.toDataURL("image/jpeg", quality);
+            resolve({ previewUrl: dataUrl, base64: dataUrl.split(",")[1] });
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function renderThumbs() {
+      const grid = document.getElementById("thumbsGrid");
+      grid.innerHTML = "";
+      attachedPhotos.forEach((p, idx) => {
+        const wrap = document.createElement("div");
+        wrap.className = "thumb-wrap";
+        wrap.innerHTML = `<img src="${p.previewUrl}" /><button type="button" class="thumb-del" onclick="removePhoto(${idx})">✕</button>`;
+        grid.appendChild(wrap);
+      });
+    }
+
+    function removePhoto(idx) {
+      attachedPhotos.splice(idx, 1);
+      renderThumbs();
+    }
+
+    // Отправка данных в Apps Script и публикация отчёта в чат
+    let selectedShifts = {};
+
+    async function submitShiftReport() {
+      const submitBtn = document.getElementById("submitBtn");
+      const statusBox = document.getElementById("statusBox");
+
+      submitBtn.disabled = true;
+      statusBox.style.display = "block";
+      statusBox.innerHTML = `<div class="spinner"></div><b>Отчёт формируется, ожидайте...</b><br>Загружаю фото и выгружаю данные из iiko (10–15 сек).`;
+
+      try {
+        const payload = {
+          action: "publish_shift",
+          initData: tg.initData || "",
+          dateIso: dateInput.value,
+          comment: document.getElementById("commentInput").value.trim(),
+          selectedShifts: selectedShifts,
+          photos: attachedPhotos.map(p => p.base64)
+        };
+
+        // Без кастомных заголовков, чтобы браузер не делал OPTIONS preflight в Apps Script
+        const res = await fetch(GAS_WEBAPP_URL, {
+          method: "POST",
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (data.status === "MULTIPLE_SHIFTS") {
+          const c = data.conflict;
+          let html = `⚠️ <b>Обнаружено несколько смен за ${toRu(dateInput.value)}</b><br>` +
+                     `По кассе <b>${c.kassaName}</b> выберите нужный номер смены по X-отчёту:`;
+          c.shifts.forEach(sh => {
+            html += `<button type="button" class="shift-choice-btn" onclick="pickShift('${c.kassaName.replace(/'/g, "\\'")}', '${sh.num}')">
+              🧾 ${c.kassaName}: Смена №${sh.num} (${Math.round(sh.sum).toLocaleString("ru-RU")} ₽)
+            </button>`;
+          });
+          html += `<button type="button" class="shift-choice-btn" onclick="pickShift('__ALL__', '__ALL__')">📊 Объединить все за день</button>`;
+          statusBox.innerHTML = html;
+          submitBtn.disabled = false;
+          return;
+        }
+
+        if (data.status === "OK") {
+          statusBox.innerHTML = `✅ <b>Отчёт успешно отправлен в рабочий чат!</b>`;
+          setTimeout(() => tg.close(), 1200);
+          return;
+        }
+
+        throw new Error(data.message || "Неизвестный ответ сервера");
+      } catch (err) {
+        statusBox.innerHTML = `❌ <b>Ошибка:</b> ${err.message}`;
+        submitBtn.disabled = false;
+      }
+    }
+
+    function pickShift(kassaName, shiftNum) {
+      if (kassaName === "__ALL__") {
+        selectedShifts["__ALLOW_ALL__"] = "1";
+      } else {
+        selectedShifts[kassaName] = shiftNum;
+      }
+      submitShiftReport();
+    }
+  </script>
+</body>
+</html>
